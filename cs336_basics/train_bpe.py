@@ -1,6 +1,7 @@
 from pathlib import Path
 import regex as re
 from collections import Counter
+from typing import Iterable, Iterator
 
 PAT = r"""'(?:[sdmt]|ll|ve|re)| ?\p{L}+| ?\p{N}+| ?[^\s\p{L}\p{N}]+|\s+(?!\S)|\s+"""
 
@@ -128,4 +129,64 @@ def train_bpe(input_path: str, vocab_size: int, special_tokens:list[str]) -> tup
         token_seq_freqs, pair_freqs = apply_merge_incremental(token_seq_freqs, pair_freqs, best_pair)
 
     return vocab, merges
+
+
+class Tokenizer:
+    def __init__(self, vocab: dict[int,bytes], merges: list[tuple[bytes, bytes]], special_tokens: list[str] |None=None):
+        self.vocab = vocab
+        self.merges = merges
+        self.special_tokens = special_tokens or []
+        self.merge_rank = {merge: rank for rank, merge in enumerate(self.merges)}
+
+    def from_files(cls, vocab_filepath, merges_filepath, special_tokens=None):
+        raise NotImplementedError
+
+    def _merge_byte_seq(self, byte_seq: tuple[bytes, ...]) -> tuple[bytes, ...]:
+        while len(byte_seq) > 1:
+            # Find the optimal merge
+            min_rank = len(self.merges) + 1
+            merge = None
+            for i in range(len(byte_seq) - 1):
+                pair = (byte_seq[i], byte_seq[i+1])
+                if pair in self.merge_rank and self.merge_rank[pair] < min_rank:
+                    min_rank = self.merge_rank[pair]
+                    merge = pair
+            if merge is None:
+                break
+            # apply merge
+            byte_seq = merge_token(byte_seq, merge)
+
+        return byte_seq
+
+    def encode(self, text: str)-> list[int]:
+        reverse_vocab = {v: k for k, v in self.vocab.items()}
+        encoding_output = []
+        if self.special_tokens:
+            special_tokens_sorted = sorted(self.special_tokens, key=len, reverse=True)
+            pattern = "(" + "|".join(re.escape(tok) for tok in special_tokens_sorted) + ")"
+            parts = [p for p in re.split(pattern, text) if p != ""]
+        else:
+            parts = [text]
+
+        for part in parts:
+            if part in self.special_tokens:
+                encoding_output.append(reverse_vocab[part.encode('utf-8')])
+
+            else:
+                pre_tokens = pre_tokenize(part)
+                for pre_token in pre_tokens:
+                    byte_seq = pretoken_to_token_seq(pre_token)
+                    tokenized_byte_seq = self._merge_byte_seq(byte_seq)
+                    for byte in tokenized_byte_seq:
+                        encoding_output.append(reverse_vocab[byte])
+
+        return encoding_output
+
+    def encode_iterable(self, iterable: Iterable[str]) -> Iterator[int]:
+        for text in iterable:
+            yield from self.encode(text)
+
+    def decode(self, ids: list[int]) -> str:
+        decoded_bytes = b"".join(self.vocab[i] for i in ids)
+        return decoded_bytes.decode("utf-8", errors="replace")
 
