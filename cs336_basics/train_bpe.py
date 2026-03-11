@@ -36,8 +36,7 @@ def count_pairs(token_seq_freqs: dict[tuple[bytes, ...], int]) -> dict[tuple[byt
         if len(token_seq) < 2:
             continue
         else:
-            for i in range(len(token_seq) - 1):
-                pair = (token_seq[i], token_seq[i+1])
+            for pair in zip(token_seq, token_seq[1:]):
                 pair_freqs[pair] += num
 
     return dict(pair_freqs)
@@ -70,8 +69,6 @@ def merge_token(token_seq: tuple[bytes, ...], target: tuple[bytes, bytes]) -> tu
             i += 1
     return tuple(merged)
 
-
-
 def update_token_seq_freq(token_seq_freqs: dict[tuple[bytes, ...], int], best_pair: tuple[bytes, bytes]) -> dict[tuple[bytes, ...], int]:
     new_token_seq_freqs = Counter()
     for token_seq, freq in token_seq_freqs.items():
@@ -79,14 +76,48 @@ def update_token_seq_freq(token_seq_freqs: dict[tuple[bytes, ...], int], best_pa
         new_token_seq_freqs[new_seq] += freq
     return dict(new_token_seq_freqs)
 
+def iter_pairs(token_seq: tuple[bytes, ...]):
+    return zip(token_seq, token_seq[1:])
+
+def contains_pair(token_seq: tuple[bytes, ...], target: tuple[bytes, bytes]) -> bool:
+    return any(pair == target for pair in zip(token_seq, token_seq[1:]))
+
+def apply_merge_incremental(token_seq_freqs: dict[tuple[bytes, ...], int], pair_freqs: dict[tuple[bytes, bytes], int], best_pair: tuple[bytes, bytes]) -> tuple[dict[tuple[bytes, ...], int], dict[tuple[bytes, bytes], int]]:
+    affected = []
+    new_token_seq_freqs = Counter(token_seq_freqs)
+    new_pair_freqs = Counter(pair_freqs)
+
+    for token_seq, freq in token_seq_freqs.items():
+        if contains_pair(token_seq, best_pair):
+            affected.append((token_seq, freq))
+
+    for old_seq, freq in affected:
+        new_seq = merge_token(old_seq, best_pair)
+
+        for pair in iter_pairs(old_seq):
+            new_pair_freqs[pair] -= freq
+            if new_pair_freqs[pair] == 0:
+                del new_pair_freqs[pair]
+
+        new_token_seq_freqs[old_seq] -= freq
+        if new_token_seq_freqs[old_seq] == 0:
+            del new_token_seq_freqs[old_seq]
+
+        new_token_seq_freqs[new_seq] += freq
+        for pair in iter_pairs(new_seq):
+            new_pair_freqs[pair] += freq
+
+    return dict(new_token_seq_freqs), dict(new_pair_freqs)
+
+
 
 def train_bpe(input_path: str, vocab_size: int, special_tokens:list[str]) -> tuple[dict[int, bytes], list[tuple[bytes, bytes]]]:
     docs = load_docs(input_path, special_tokens)
     vocab = init_vocab(special_tokens)
     merges = []
     token_seq_freqs = build_token_seq_freqs(docs)
+    pair_freqs = count_pairs(token_seq_freqs)
     while len(vocab) < vocab_size:
-        pair_freqs = count_pairs(token_seq_freqs)
         best_pair = get_max_pairs(pair_freqs)
         if best_pair is None:
             break
@@ -94,7 +125,7 @@ def train_bpe(input_path: str, vocab_size: int, special_tokens:list[str]) -> tup
         new_id = len(vocab)
         vocab[new_id] = new_token
         merges.append(best_pair)
-        token_seq_freqs = update_token_seq_freq(token_seq_freqs, best_pair)
+        token_seq_freqs, pair_freqs = apply_merge_incremental(token_seq_freqs, pair_freqs, best_pair)
 
     return vocab, merges
 
