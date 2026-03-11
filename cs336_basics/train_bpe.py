@@ -1,8 +1,112 @@
 from pathlib import Path
 import regex as re
 from collections import Counter
+import os
+from typing import BinaryIO
+from multiprocessing import Pool, cpu_count
 
 PAT = r"""'(?:[sdmt]|ll|ve|re)| ?\p{L}+| ?\p{N}+| ?[^\s\p{L}\p{N}]+|\s+(?!\S)|\s+"""
+
+def find_chunk_boundaries(
+    file: BinaryIO,
+    desired_num_chunks: int,
+    split_special_token: bytes,
+) -> list[int]:
+    assert isinstance(split_special_token, bytes), "Must represent special token as a bytestring"
+
+    file.seek(0, os.SEEK_END)
+    file_size = file.tell()
+    file.seek(0)
+
+    if desired_num_chunks <= 1 or file_size == 0:
+        return [0, file_size]
+
+    chunk_size = file_size // desired_num_chunks
+    chunk_boundaries = [i * chunk_size for i in range(desired_num_chunks + 1)]
+    chunk_boundaries[-1] = file_size
+
+    mini_chunk_size = 4096
+
+    for bi in range(1, len(chunk_boundaries) - 1):
+        initial_position = chunk_boundaries[bi]
+        file.seek(initial_position)
+
+        while True:
+            mini_chunk = file.read(mini_chunk_size)
+
+            if mini_chunk == b"":
+                chunk_boundaries[bi] = file_size
+                break
+
+            found_at = mini_chunk.find(split_special_token)
+            if found_at != -1:
+                chunk_boundaries[bi] = initial_position + found_at
+                break
+
+            initial_position += mini_chunk_size
+
+    return sorted(set(chunk_boundaries))
+
+def split_docs(text: str, special_tokens: list[str]) -> list[str]:
+    if not special_tokens:
+        return [text] if text != "" else []
+    pattern = "|".join(re.escape(tok) for tok in special_tokens)
+    return [doc for doc in re.split(pattern, text) if doc != ""]
+
+
+def build_token_seq_freqs_from_docs(docs: list[str]) -> Counter[tuple[bytes, ...]]:
+    token_seq_freqs = Counter()
+    for doc in docs:
+        for token in pre_tokenize(doc):
+            token_seq = pretoken_to_token_seq(token)
+            token_seq_freqs[token_seq] += 1
+    return token_seq_freqs
+
+def _process_chunk(args) -> Counter[tuple[bytes, ...]]:
+    input_path, start, end, special_tokens = args
+
+    with open(input_path, "rb") as f:
+        f.seek(start)
+        chunk_bytes = f.read(end - start)
+
+    chunk_text = chunk_bytes.decode("utf-8", errors="ignore")
+    chunk_text = chunk_text.replace("\r\n", "\n").replace("\r", "\n")
+    docs = split_docs(chunk_text, special_tokens)
+    return build_token_seq_freqs_from_docs(docs)
+
+
+
+def build_token_seq_freqs_parallel(
+    input_path: str,
+    special_tokens: list[str],
+    num_processes: int | None = None,
+) -> dict[tuple[bytes, ...], int]:
+    if num_processes is None:
+        num_processes = max(1, cpu_count() or 1)
+
+    boundary_token = special_tokens[0].encode("utf-8") if special_tokens else b"<|endoftext|>"
+
+    with open(input_path, "rb") as f:
+        boundaries = find_chunk_boundaries(f, num_processes, boundary_token)
+
+    tasks = [
+        (input_path, start, end, special_tokens)
+        for start, end in zip(boundaries[:-1], boundaries[1:])
+        if end > start
+    ]
+
+    if len(tasks) <= 1:
+        total = Counter()
+        for task in tasks:
+            total += _process_chunk(task)
+        return dict(total)
+
+    total = Counter()
+    with Pool(processes=min(num_processes, len(tasks))) as pool:
+        for local_counter in pool.imap_unordered(_process_chunk, tasks):
+            total += local_counter
+
+    return dict(total)
 
 def load_docs(input_path: str, special_tokens: list[str]) -> list[str]:
     text = Path(input_path).read_text(encoding="utf8")
@@ -112,10 +216,12 @@ def apply_merge_incremental(token_seq_freqs: dict[tuple[bytes, ...], int], pair_
 
 
 def train_bpe(input_path: str, vocab_size: int, special_tokens:list[str]) -> tuple[dict[int, bytes], list[tuple[bytes, bytes]]]:
-    docs = load_docs(input_path, special_tokens)
+    # docs = load_docs(input_path, special_tokens)
+
     vocab = init_vocab(special_tokens)
     merges = []
-    token_seq_freqs = build_token_seq_freqs(docs)
+    # token_seq_freqs = build_token_seq_freqs(docs)
+    token_seq_freqs = build_token_seq_freqs_parallel(input_path, special_tokens)
     pair_freqs = count_pairs(token_seq_freqs)
     while len(vocab) < vocab_size:
         best_pair = get_max_pairs(pair_freqs)
