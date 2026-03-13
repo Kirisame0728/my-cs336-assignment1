@@ -96,4 +96,9 @@ class RotaryPositionalEmbedding(nn.Module):
         return out
 
 
+def softmax(v, i):
+    shift_c = v.max(dim=i, keepdim=True).values
+    v_shift = v - shift_c
+    softmax_denom = torch.sum(torch.exp(v_shift), dim=i, keepdim=True)
+    return torch.exp(v_shift) / softmax_denom
 
