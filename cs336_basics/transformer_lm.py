@@ -96,15 +96,26 @@ class RotaryPositionalEmbedding(nn.Module):
         return out
 
 
-def softmax(v, i):
-    shift_c = v.max(dim=i, keepdim=True).values
-    v_shift = v - shift_c
-    softmax_denom = torch.sum(torch.exp(v_shift), dim=i, keepdim=True)
-    return torch.exp(v_shift) / softmax_denom
+class softmax(nn.Module):
+    def __init__(self):
+        super().__init__()
+    def forward(self, v, i):
+        shift_c = v.max(dim=i, keepdim=True).values
+        v_shift = v - shift_c
+        softmax_denom = torch.sum(torch.exp(v_shift), dim=i, keepdim=True)
+        return torch.exp(v_shift) / softmax_denom
 
-def scaled_dot_product_attention(queries, keys, values, mask=None):
-    self_attn = queries @ keys.transpose(-2, -1) / math.sqrt(queries.shape[-1])
-    if mask is not None:
-        self_attn =  self_attn.masked_fill(~mask, float("-inf"))
-    return softmax(self_attn, -1) @ values
+class ScaledDotProductAttention(nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.softmax = softmax()
+    def forward(self, queries, keys, values, mask=None):
+        self_attn = queries @ keys.transpose(-2, -1) / math.sqrt(queries.shape[-1])
+        if mask is not None:
+            self_attn = self_attn.masked_fill(~mask, float("-inf"))
+        return self.softmax(self_attn, -1) @ values
+
+
+
+
 
