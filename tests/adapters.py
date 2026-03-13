@@ -407,7 +407,38 @@ def run_transformer_lm(
         Float[Tensor, "batch_size sequence_length vocab_size"]: Tensor with the predicted unnormalized
         next-word distribution for each token.
     """
-    raise NotImplementedError
+    from cs336_basics.transformer_lm import TransformerLM
+    model = TransformerLM(
+        vocab_size=vocab_size,
+        context_length=context_length,
+        d_model=d_model,
+        num_layers=num_layers,
+        num_heads=num_heads,
+        d_ff=d_ff,
+        rope_theta=rope_theta,
+        device=in_indices.device,
+    )
+    mapped_state_dict = {
+        "token_embed.embedding_matrix": weights["token_embeddings.weight"],
+        "norm.gain": weights["ln_final.weight"],
+        "out_embed.W": weights["lm_head.weight"],
+    }
+
+    for i in range(num_layers):
+        mapped_state_dict[f"layers.{i}.attn_norm.gain"] = weights[f"layers.{i}.ln1.weight"]
+        mapped_state_dict[f"layers.{i}.ffn_norm.gain"] = weights[f"layers.{i}.ln2.weight"]
+
+        mapped_state_dict[f"layers.{i}.ffn.W1"] = weights[f"layers.{i}.ffn.w1.weight"]
+        mapped_state_dict[f"layers.{i}.ffn.W2"] = weights[f"layers.{i}.ffn.w2.weight"]
+        mapped_state_dict[f"layers.{i}.ffn.W3"] = weights[f"layers.{i}.ffn.w3.weight"]
+
+        mapped_state_dict[f"layers.{i}.MultiHeadAttnRoPE.W_Q"] = weights[f"layers.{i}.attn.q_proj.weight"]
+        mapped_state_dict[f"layers.{i}.MultiHeadAttnRoPE.W_K"] = weights[f"layers.{i}.attn.k_proj.weight"]
+        mapped_state_dict[f"layers.{i}.MultiHeadAttnRoPE.W_V"] = weights[f"layers.{i}.attn.v_proj.weight"]
+        mapped_state_dict[f"layers.{i}.MultiHeadAttnRoPE.W_O"] = weights[f"layers.{i}.attn.output_proj.weight"]
+
+    model.load_state_dict(mapped_state_dict)
+    return model(in_indices)
 
 
 def run_rmsnorm(

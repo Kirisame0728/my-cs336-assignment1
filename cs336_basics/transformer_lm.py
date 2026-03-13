@@ -160,7 +160,7 @@ class MultiHeadSelfAttentionWithRoPE(nn.Module):
         self.W_V = nn.Parameter(torch.empty((d_model, d_model), device=device))
         self.W_O = nn.Parameter(torch.empty((d_model, d_model), device=device))
         self.init_parameters()
-        self.RoPE = RotaryPositionalEmbedding(theta, self.d_attn, max_seq_len)
+        self.RoPE = RotaryPositionalEmbedding(theta, self.d_attn, max_seq_len, device=device)
         self.token_positions = token_positions
 
     def init_parameters(self):
@@ -180,8 +180,8 @@ class MultiHeadSelfAttentionWithRoPE(nn.Module):
         multi_V = V.reshape(x.shape[0], x.shape[1], -1, self.d_attn).transpose(1, 2)
 
 
-        multi_Q = self.RoPE(multi_Q, self.token_positions)
-        multi_K = self.RoPE(multi_K, self.token_positions)
+        multi_Q = self.RoPE(multi_Q, self.token_positions[:x.shape[1]])
+        multi_K = self.RoPE(multi_K, self.token_positions[:x.shape[1]])
 
         attn = multi_Q @ multi_K.transpose(-2, -1) / self.d_attn ** 0.5
         mask = torch.tril(torch.ones(x.shape[1], x.shape[1], device=x.device))
@@ -195,10 +195,29 @@ class TransformerBlock(nn.Module):
         self.attn_norm = RMSNorm(d_model, device=device)
         self.ffn_norm = RMSNorm(d_model, device=device)
         self.MultiHeadAttnRoPE = MultiHeadSelfAttentionWithRoPE(d_model, num_heads, theta, max_seq_len, token_positions, device=device)
-        self.ffn = SwiGLU(d_model, d_ff)
+        self.ffn = SwiGLU(d_model, d_ff, device=device)
     def forward(self, x):
         y = x + self.MultiHeadAttnRoPE(self.attn_norm(x))
         return y + self.ffn(self.ffn_norm(y))
+
+class TransformerLM(nn.Module):
+    def __init__(self, vocab_size, context_length, d_model, num_layers, num_heads, d_ff, rope_theta, device=None):
+        super().__init__()
+        self.token_embed = Embedding(vocab_size, d_model, device=device)
+        self.norm = RMSNorm(d_model, device=device)
+        self.out_embed = Linear(d_model, vocab_size, device=device)
+        self.token_positions = torch.arange(context_length, device=device)
+        self.layers = nn.ModuleList([
+            TransformerBlock(d_model, num_heads, d_ff, context_length, rope_theta, self.token_positions, device)
+            for _ in range(num_layers)
+        ])
+    def forward(self, x):
+        x = self.token_embed(x)
+        for block in self.layers:
+            x = block(x)
+        x = self.norm(x)
+        x = self.out_embed(x)
+        return x
 
 
 
