@@ -102,3 +102,9 @@ def softmax(v, i):
     softmax_denom = torch.sum(torch.exp(v_shift), dim=i, keepdim=True)
     return torch.exp(v_shift) / softmax_denom
 
+def scaled_dot_product_attention(queries, keys, values, mask=None):
+    self_attn = queries @ keys.transpose(-2, -1) / math.sqrt(queries.shape[-1])
+    if mask is not None:
+        self_attn =  self_attn.masked_fill(~mask, float("-inf"))
+    return softmax(self_attn, -1) @ values
+
