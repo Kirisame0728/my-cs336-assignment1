@@ -115,6 +115,44 @@ class ScaledDotProductAttention(nn.Module):
             self_attn = self_attn.masked_fill(~mask, float("-inf"))
         return self.softmax(self_attn, -1) @ values
 
+class MultiHeadSelfAttention(nn.Module):
+    def __init__(self, d_model, num_heads, device=None):
+        super().__init__()
+        self.d_model = d_model
+        self.num_heads = num_heads
+        self.d_attn = self.d_model // self.num_heads
+        self.W_Q = nn.Parameter(torch.empty((d_model, d_model), device=device))
+        self.W_K = nn.Parameter(torch.empty((d_model, d_model), device=device))
+        self.W_V = nn.Parameter(torch.empty((d_model, d_model), device=device))
+        self.W_O = nn.Parameter(torch.empty((d_model, d_model), device=device))
+        self.init_parameters()
+
+    def init_parameters(self):
+        std = math.sqrt(1.0 / self.d_model)
+        nn.init.trunc_normal_(self.W_Q, mean=0.0, std=std, a=-3 * std, b=3 * std)
+        nn.init.trunc_normal_(self.W_K, mean=0.0, std=std, a=-3 * std, b=3 * std)
+        nn.init.trunc_normal_(self.W_V, mean=0.0, std=std, a=-3 * std, b=3 * std)
+        nn.init.trunc_normal_(self.W_O, mean=0.0, std=std, a=-3 * std, b=3 * std)
+
+    def forward(self, x):
+        Q = x @ self.W_Q.T
+        K = x @ self.W_K.T
+        V = x @ self.W_V.T
+
+        multi_Q = Q.reshape(x.shape[0], x.shape[1], -1, self.d_attn).transpose(1, 2)
+        multi_K = K.reshape(x.shape[0], x.shape[1], -1, self.d_attn).transpose(1, 2)
+        multi_V = V.reshape(x.shape[0], x.shape[1], -1, self.d_attn).transpose(1, 2)
+
+        attn = multi_Q @ multi_K.transpose(-2, -1) / self.d_attn ** 0.5
+        mask = torch.tril(torch.ones(x.shape[1], x.shape[1], device=x.device))
+        masked_attn = attn.masked_fill(mask==0, float("-inf"))
+        y = torch.softmax(masked_attn, dim=-1) @ multi_V
+        return y.transpose(1, 2).reshape(x.shape[0], x.shape[1], -1) @ self.W_O.T
+
+
+
+
+
 
 
 
