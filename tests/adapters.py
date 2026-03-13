@@ -157,15 +157,15 @@ def run_multihead_self_attention(
         implementation with the given QKV projection weights and input features.
     """
     from cs336_basics.transformer_lm import MultiHeadSelfAttention
-    ml_attn = MultiHeadSelfAttention(d_model, num_heads)
+    mh_attn = MultiHeadSelfAttention(d_model, num_heads)
     state_dict = {
         "W_Q": q_proj_weight,
         "W_K": k_proj_weight,
         "W_V": v_proj_weight,
         "W_O": o_proj_weight
     }
-    ml_attn.load_state_dict(state_dict)
-    return ml_attn(in_features)
+    mh_attn.load_state_dict(state_dict)
+    return mh_attn(in_features)
 
 
 def run_multihead_self_attention_with_rope(
@@ -205,7 +205,16 @@ def run_multihead_self_attention_with_rope(
         Float[Tensor, " ... sequence_length d_out"]: Tensor with the output of running your optimized, batched multi-headed attention
         implementation with the given QKV projection weights and input features.
     """
-    raise NotImplementedError
+    from cs336_basics.transformer_lm import MultiHeadSelfAttentionWithRoPE
+    mh_attn_rope = MultiHeadSelfAttentionWithRoPE(d_model, num_heads, theta, max_seq_len, token_positions)
+    state_dict = {
+        "W_Q": q_proj_weight,
+        "W_K": k_proj_weight,
+        "W_V": v_proj_weight,
+        "W_O": o_proj_weight
+    }
+    mh_attn_rope.load_state_dict(state_dict)
+    return mh_attn_rope(in_features)
 
 
 def run_rope(
@@ -301,7 +310,22 @@ def run_transformer_block(
         Float[Tensor, "batch sequence_length d_model"] Tensor with the output of
         running the Transformer block on the input features while using RoPE.
     """
-    raise NotImplementedError
+    from cs336_basics.transformer_lm import TransformerBlock
+    token_positions = torch.arange(in_features.shape[1], device=in_features.device)
+    tf_block = TransformerBlock(d_model, num_heads, d_ff, max_seq_len, theta, token_positions)
+    weights_dict = {
+        "attn_norm.gain": weights['ln1.weight'],
+        "ffn_norm.gain": weights['ln2.weight'],
+        "ffn.W1": weights['ffn.w1.weight'],
+        "ffn.W2": weights['ffn.w2.weight'],
+        "ffn.W3": weights['ffn.w3.weight'],
+        "MultiHeadAttnRoPE.W_Q": weights['attn.q_proj.weight'],
+        "MultiHeadAttnRoPE.W_K": weights['attn.k_proj.weight'],
+        "MultiHeadAttnRoPE.W_V": weights['attn.v_proj.weight'],
+        "MultiHeadAttnRoPE.W_O": weights['attn.output_proj.weight'],
+    }
+    tf_block.load_state_dict(weights_dict)
+    return tf_block(in_features)
 
 
 def run_transformer_lm(
