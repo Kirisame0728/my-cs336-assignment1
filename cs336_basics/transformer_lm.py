@@ -22,3 +22,15 @@ class Embedding(nn.Module):
 
     def forward(self, token_ids: torch.Tensor) -> torch.Tensor:
         return self.embedding_matrix[token_ids]
+
+class RMSNorm(nn.Module):
+    def __init__(self, d_model: int, eps: float=1e-5, device=None, dtype=None):
+        super().__init__()
+        self.d_model = d_model
+        self.eps = eps
+        self.gain = nn.Parameter(torch.empty((d_model,), device=device, dtype=dtype))
+
+    def forward(self, x):
+        rms = torch.sqrt(torch.mean(x**2, dim=-1, keepdim=True) + self.eps)
+        return (x / rms) *  self.gain
+
