@@ -64,3 +64,13 @@ def learning_rate_schedule(t, alpha_max, alpha_min, T_w, T_c):
     else:
         return alpha_min
 
+def gradient_clipping(parameters, max_norm):
+    norm = torch.sqrt(sum(torch.sum(p.grad ** 2) for p in parameters if p.grad is not None))
+    if norm > max_norm:
+        for p in parameters:
+            if p.grad is not None:
+                p.grad[:] *= max_norm / (1e-6 + norm)
+
+
+
+
