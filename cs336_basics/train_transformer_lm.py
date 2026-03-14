@@ -58,9 +58,9 @@ class AdamWOpt(torch.optim.Optimizer):
 
 def learning_rate_schedule(t, alpha_max, alpha_min, T_w, T_c):
     if t < T_w:
-        return t * T_w / alpha_max
+        return t * alpha_max / T_w
     elif t >= T_w and t <= T_c:
-        return alpha_min + 0.5 * (1 + math.cos(math.pi * (t-T_w) / T_c - T_w)) * (alpha_max - alpha_min)
+        return alpha_min + 0.5 * (1 + math.cos(math.pi * (t-T_w) / (T_c - T_w))) * (alpha_max - alpha_min)
     else:
-        return alpha_max
+        return alpha_min
 
