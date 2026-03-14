@@ -70,7 +70,3 @@ def gradient_clipping(parameters, max_norm):
         for p in parameters:
             if p.grad is not None:
                 p.grad[:] *= max_norm / (1e-6 + norm)
-
-
-
-
