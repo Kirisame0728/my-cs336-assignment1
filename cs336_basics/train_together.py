@@ -17,7 +17,7 @@ def evaluate(model, val_data, batch_size, context_length, device, eval_iters):
             x, y = data_loading(val_data, batch_size, context_length, device)
             output = model(x)
             batch, context, vocab = output.shape
-            output.reshape(batch * context, vocab)
+            output = output.reshape(batch * context, vocab)
             y = y.reshape(batch * context)
             loss = cross_entropy(output, y)
             losses.append(loss.item())
@@ -81,7 +81,7 @@ def train(args):
         # Forward
         output = model(x)
         batch, context, vocab = output.shape
-        output.reshape(batch * context, vocab)
+        output = output.reshape(batch * context, vocab)
         y = y.reshape(batch * context)
         loss = cross_entropy(output, y)
 
@@ -120,11 +120,11 @@ def train(args):
             save_checkpoint(model, optimizer, step, ckpt_path)
             print(f"Saved checkpoint to {ckpt_path}")
 
-        final_ckpt = save_dir / "final_checkpoint.pt"
-        save_checkpoint(model, optimizer, args.max_iters, final_ckpt)
-        print(f"Training finished. Final checkpoint saved to {final_ckpt}")
+    final_ckpt = save_dir / "final_checkpoint.pt"
+    save_checkpoint(model, optimizer, args.max_iters, final_ckpt)
+    print(f"Training finished. Final checkpoint saved to {final_ckpt}")
 
-        writer.close()
+    writer.close()
 
 def build_parser():
     parser = argparse.ArgumentParser()
@@ -162,6 +162,7 @@ def build_parser():
     parser.add_argument("--eval_iters", type=int, default=20)
     parser.add_argument("--log_interval", type=int, default=50)
     parser.add_argument("--save_interval", type=int, default=1000)
+    parser.add_argument("--log_dir", type=str, required=True)
 
     # Device
     parser.add_argument("--device", type=str, default="cuda")
